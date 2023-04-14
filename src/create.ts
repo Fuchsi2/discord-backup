@@ -12,6 +12,7 @@ import { CategoryChannel, ChannelType, Collection, Guild, GuildChannel, Snowflak
 import nodeFetch from 'node-fetch';
 import { fetchChannelPermissions, fetchTextChannelData, fetchVoiceChannelData } from './util';
 import { MemberData } from './types/MemberData';
+import { ForumChannelData } from './types/ForumChannelData';
 
 /**
  * Returns an array with the banned members of the guild
@@ -125,7 +126,10 @@ export async function getChannels(guild: Guild, options: CreateOptions) {
             const children = category.children.cache.sort((a, b) => a.position - b.position).toJSON();
             for (const child of children) {
                 // For each child channel
-                if (child.type === ChannelType.GuildText || child.type === ChannelType.GuildNews || child.type === ChannelType.GuildForum) {
+                if (child.type === ChannelType.GuildForum) {
+                    const channelData: ForumChannelData = await fetchTextChannelData(child as ForumChannelData, options); // Gets the channel data
+                    categoryData.children.push(channelData); // And then push the child in the categoryData
+                } else if (child.type === ChannelType.GuildText || child.type === ChannelType.GuildNews) {
                     const channelData: TextChannelData = await fetchTextChannelData(child as TextChannel, options); // Gets the channel data
                     categoryData.children.push(channelData); // And then push the child in the categoryData
                 } else {

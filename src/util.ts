@@ -29,9 +29,11 @@ import {
     GuildExplicitContentFilter,
     GuildVerificationLevel,
     OverwriteType,
-    AttachmentBuilder
+    AttachmentBuilder,
+    ForumChannel
 } from 'discord.js';
 import nodeFetch from 'node-fetch';
+import { ForumChannelData } from './types/ForumChannelData';
 
 const MaxBitratePerTier: Record<GuildPremiumTier, number> = {
     [GuildPremiumTier.None]: 64000,
@@ -43,7 +45,7 @@ const MaxBitratePerTier: Record<GuildPremiumTier, number> = {
 /**
  * Gets the permissions for a channel
  */
-export function fetchChannelPermissions(channel: TextChannel | VoiceChannel | CategoryChannel | NewsChannel) {
+export function fetchChannelPermissions(channel: TextChannel | VoiceChannel | CategoryChannel | NewsChannel | ForumChannel) {
     const permissions: ChannelPermissionsData[] = [];
     channel.permissionOverwrites.cache
         .filter((p) => p.type === OverwriteType.Role)
@@ -176,6 +178,50 @@ export async function fetchTextChannelData(channel: TextChannel | NewsChannel, o
 }
 
 /**
+ * Fetches the forum channel data that is necessary for the backup
+ */
+export async function fetchForumChannelData(channel: ForumChannel, options: CreateOptions) {
+    return new Promise<ForumChannelData>(async (resolve) => {
+        const channelData: ForumChannelData = {
+            type: channel.type,
+            name: channel.name,
+            nsfw: channel.nsfw,
+            rateLimitPerUser: channel.rateLimitPerUser,
+            parent: channel.parent ? channel.parent.name : null,
+            topic: channel.topic,
+            permissions: fetchChannelPermissions(channel),
+            threads: [],
+            defaultReactionEmoji: channel.defaultReactionEmoji,
+            availableTags: channel.availableTags,
+            defaultAutoArchiveDuration: channel.defaultAutoArchiveDuration,
+            defaultThreadRateLimitPerUser: channel.defaultThreadRateLimitPerUser,
+            defaultSortOrder: channel.defaultSortOrder
+        };
+        /* Fetch channel threads */
+        if (channel.threads.cache.size > 0) {
+            await Promise.all(channel.threads.cache.map(async (thread) => {
+                const threadData: ThreadChannelData = {
+                    type: thread.type,
+                    name: thread.name,
+                    archived: thread.archived,
+                    autoArchiveDuration: thread.autoArchiveDuration,
+                    locked: thread.locked,
+                    rateLimitPerUser: thread.rateLimitPerUser,
+                    messages: []
+                };
+                try {
+                    threadData.messages = await fetchChannelMessages(thread, options);
+                    /* Return thread data */
+                    channelData.threads.push(threadData);
+                } catch {
+                    channelData.threads.push(threadData);
+                }
+            }));
+        }
+    });
+}
+
+/**
  * Creates a category for the guild
  */
 export async function loadCategory(categoryData: CategoryData, guild: Guild) {
@@ -203,7 +249,7 @@ export async function loadCategory(categoryData: CategoryData, guild: Guild) {
  * Create a channel and returns it
  */
 export async function loadChannel(
-    channelData: TextChannelData | VoiceChannelData,
+    channelData: TextChannelData | VoiceChannelData | ForumChannelData,
     guild: Guild,
     category?: CategoryChannel,
     options?: LoadOptions
@@ -248,7 +294,16 @@ export async function loadChannel(
             type: null,
             parent: category
         };
-        if (channelData.type === ChannelType.GuildText || channelData.type === ChannelType.GuildNews) {
+        if (channelData.type === ChannelType.GuildForum) {
+            createOptions.topic = (channelData as ForumChannelData).topic;
+            createOptions.nsfw = (channelData as ForumChannelData).nsfw;
+            createOptions.rateLimitPerUser = (channelData as ForumChannelData).rateLimitPerUser;
+            createOptions.type = ChannelType.GuildForum;
+            createOptions.defaultReactionEmoji = (channelData as ForumChannelData).defaultReactionEmoji
+            createOptions.availableTags = (channelData as ForumChannelData).availableTags
+            createOptions.defaultAutoArchiveDuration = (channelData as ForumChannelData).defaultAutoArchiveDuration
+            createOptions.defaultSortOrder = (channelData as ForumChannelData).defaultSortOrder
+        } else if (channelData.type === ChannelType.GuildText || channelData.type === ChannelType.GuildNews) {
             createOptions.topic = (channelData as TextChannelData).topic;
             createOptions.nsfw = (channelData as TextChannelData).nsfw;
             createOptions.rateLimitPerUser = (channelData as TextChannelData).rateLimitPerUser;
